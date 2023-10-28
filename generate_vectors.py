@@ -93,20 +93,26 @@ def generate_save_vectors(
     )
 
     for p_tokens, n_tokens in tqdm(dataset, desc="Processing prompts"):
-        p_tokens = p_tokens.to(model.device)
-        n_tokens = n_tokens.to(model.device)
-        model.reset_all()
-        model.get_logits(p_tokens)
-        for layer in layers:
-            p_activations = model.get_last_activations(layer)
-            p_activations = p_activations[0, -2, :].detach().cpu()
-            pos_activations[layer].append(p_activations)
-        model.reset_all()
-        model.get_logits(n_tokens)
-        for layer in layers:
-            n_activations = model.get_last_activations(layer)
-            n_activations = n_activations[0, -2, :].detach().cpu()
-            neg_activations[layer].append(n_activations)
+        try:
+            p_tokens = p_tokens.to(model.device)
+            n_tokens = n_tokens.to(model.device)
+            model.reset_all()
+            model.get_logits(p_tokens)
+            for layer in layers:
+                p_activations = model.get_last_activations(layer)
+                p_activations = p_activations[0, -2, :].detach().cpu()
+                pos_activations[layer].append(p_activations)
+            model.reset_all()
+            model.get_logits(n_tokens)
+            for layer in layers:
+                n_activations = model.get_last_activations(layer)
+                n_activations = n_activations[0, -2, :].detach().cpu()
+                neg_activations[layer].append(n_activations)
+        except KeyboardInterrupt:
+            for layer in layers:
+                pos_activations[layer] = pos_activations[layer][:len(neg_activations[layer])]
+                neg_activations[layer] = neg_activations[layer][:len(pos_activations[layer])]
+            break
 
     for layer in layers:
         all_pos_layer = t.stack(pos_activations[layer])
