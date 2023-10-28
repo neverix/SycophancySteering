@@ -100,3 +100,7 @@ wcwidth==0.2.7
 xxhash==3.3.0
 yarl==1.9.2
 zipp==3.17.0
+
+# for quantization
+optimum==1.13.2
+auto-gptq==0.4.2
