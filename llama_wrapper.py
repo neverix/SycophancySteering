@@ -5,6 +5,7 @@ from matplotlib.ticker import ScalarFormatter
 from utils.helpers import add_vector_after_position, find_instruction_end_postion
 from utils.tokenize_llama import tokenize_llama
 from typing import Tuple, Optional
+import contextlib
 
 
 class AttnWrapper(t.nn.Module):
@@ -114,22 +115,31 @@ class LlamaWrapper:
         system_prompt,
         size="7b",
         use_chat=True,
+        quantized=False,
         add_only_after_end_str=False,
     ):
         self.device = "cuda" if t.cuda.is_available() else "cpu"
         self.system_prompt = system_prompt
         self.use_chat = use_chat
         self.add_only_after_end_str = add_only_after_end_str
-        if use_chat:
-            self.model_name_path = f"meta-llama/Llama-2-{size}-chat-hf"
+        self.quantized = quantized
+        if self.quantized:
+            if use_chat:
+                self.model_name_path = f"meta-llama/Llama-2-{size}-chat-hf"
+            else:
+                self.model_name_path = f"meta-llama/Llama-2-{size}-hf"
         else:
-            self.model_name_path = f"meta-llama/Llama-2-{size}-hf"
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name_path, use_auth_token=token
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name_path, use_auth_token=token
-        ).half().to(self.device)
+            if use_chat:
+                self.model_name_path = f"TheBloke/Llama-2-{size}-chat-GPTQ"
+            else:
+                self.model_name_path = f"TheBloke/Llama-2-{size}-GPTQ"
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name_path, 
+            )
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name_path,
+                device_map="auto", low_cpu_mem_usage=True
+            )
         self.END_STR = t.tensor(self.tokenizer.encode("[/INST]")[1:]).to(self.device)
         for i, layer in enumerate(self.model.model.layers):
             self.model.model.layers[i] = BlockOutputWrapper(
@@ -168,7 +178,7 @@ class LlamaWrapper:
         return self.generate(tokens, max_new_tokens=max_new_tokens)
 
     def generate(self, tokens, max_new_tokens=50):
-        with t.no_grad():
+        with t.no_grad(), (t.autocast(self.device) if self.quantized else contextlib.nullcontext()):
             if self.add_only_after_end_str:
                 instr_pos = find_instruction_end_postion(tokens[0], self.END_STR)
             else:
@@ -180,7 +190,7 @@ class LlamaWrapper:
             return self.tokenizer.batch_decode(generated)[0]
 
     def get_logits(self, tokens):
-        with t.no_grad():
+        with t.no_grad(), (t.autocast(self.device) if self.quantized else contextlib.nullcontext()):
             if self.add_only_after_end_str:
                 instr_pos = find_instruction_end_postion(tokens[0], self.END_STR)
             else:
